@@ -1,0 +1,8 @@
+{
+  "name": "ESB Integration",
+  "content_in_root": false,
+  "filename": "esb_integration",
+  "render_readme": true,
+  "domains": ["sensor"],
+  "homeassistant": "2025.11.3"
+}
