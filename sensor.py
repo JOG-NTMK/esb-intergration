@@ -3,13 +3,14 @@ import os
 from datetime import timedelta, datetime, timezone
 import logging
 
+from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
-    UpdateFailed,
+    UpdateFailed, CoordinatorEntity,
 )
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.models import StatisticMetaData, StatisticMeanType
@@ -49,6 +50,10 @@ async def async_setup_entry(
         await coordinator.async_config_entry_first_refresh()
     except Exception as err:
         _LOGGER.error(f"Error setting up ESB sensor: {err}")
+
+    async_add_entities([
+        ESBElectricitySensor(coordinator, config_entry)
+    ])
 
 
 class ESBDataUpdateCoordinator(DataUpdateCoordinator):
@@ -203,3 +208,42 @@ class ESBDataUpdateCoordinator(DataUpdateCoordinator):
         except Exception as e:
             _LOGGER.error(f"Exception in _async_import_statistics: {e}", exc_info=True)
             raise
+
+class ESBElectricitySensor(CoordinatorEntity, SensorEntity):
+    """Representation of an ESB Electricity Usage sensor."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    def __init__(self, coordinator: ESBDataUpdateCoordinator, config_entry: ConfigEntry):
+        """Initialize the sensor."""
+        super().__init__(coordinator)
+        self._attr_name = f"ESB Electricity {coordinator.mprn}"
+        self._attr_unique_id = f"esb_{coordinator.mprn}_usage"
+        self._config_entry = config_entry
+        self._attr_statistics_metadata = {
+            "source": DOMAIN,
+            "statistic_id": f"{DOMAIN}:esb_{coordinator.mprn}_consumption",
+        }
+
+    @property
+    def native_value(self):
+        """Return the total cumulative usage."""
+        if self.coordinator.data:
+            total = self.coordinator.data.get("total_usage", 0)
+            return round(total, 2) if total > 0 else 0
+        return 0
+
+    @property
+    def extra_state_attributes(self):
+        """Return the state attributes."""
+        if self.coordinator.data:
+            readings = self.coordinator.data.get("readings", [])
+
+            return {
+                "total_readings": len(readings),
+                "last_updated": self.coordinator.data.get("last_updated"),
+                "sample_reading": readings[0] if readings else None,
+            }
+        return {}
